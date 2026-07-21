@@ -474,17 +474,7 @@ document.addEventListener("DOMContentLoaded", async function() {
 });
 
 function getDemoPlaces() {
-  return [
-    { id: "demo_v1", name: "Plaza Principal de Vallegrande", category: "turistico", description: "La plaza principal de la ciudad, rodeada de arquitectura colonial. Es el corazón social y cultural de Vallegrande.", lat: -18.48887, lng: -64.10827, image: "https://images.unsplash.com/photo-1523580494863-6f3031224c94?w=400&h=300&fit=crop", date: "2024-06-15", timestamp: Date.now() - 1000000, province: "vallegrande", status: "approved" },
-    { id: "demo_v2", name: "La Higuera - Memorial del Che", category: "historico", description: "Lugar histórico donde el guerrillero Ernesto Che Guevara fue capturado y ejecutado el 8 de octubre de 1967.", lat: -18.795, lng: -64.125, image: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop", date: "2024-05-20", timestamp: Date.now() - 2000000, province: "vallegrande", status: "approved" },
-    { id: "demo_v3", name: "Valle del Río Grande", category: "natural", description: "Hermoso valle fértil rodeado de montañas y serranías. El río Grande recorre 204 km por la provincia.", lat: -18.55, lng: -64.2, image: "https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=400&h=300&fit=crop", date: "2024-07-01", timestamp: Date.now() - 3000000, province: "vallegrande", status: "approved" },
-    { id: "demo_f1", name: "El Fuerte de Samaipata", category: "historico", description: "Sitio arqueológico preincaico declarado Patrimonio Cultural de la Humanidad por la UNESCO.", lat: -18.175, lng: -63.875, image: "https://images.unsplash.com/photo-1599939571322-792a326991f2?w=400&h=300&fit=crop", date: "2024-04-10", timestamp: Date.now() - 4000000, province: "florida", status: "approved" },
-    { id: "demo_f2", name: "Parque Nacional Amboró", category: "natural", description: "Uno de los parques con mayor biodiversidad del continente. Bosques húmedos de Yungas.", lat: -17.95, lng: -63.65, image: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=400&h=300&fit=crop", date: "2024-03-15", timestamp: Date.now() - 5000000, province: "florida", status: "approved" },
-    { id: "demo_f3", name: "Cataratas La Pajcha", category: "natural", description: "Majestuosas cataratas de 20 metros de altura cerca de Samaipata.", lat: -18.25, lng: -63.90, image: "https://images.unsplash.com/photo-1432405972618-c60b0225b8f9?w=400&h=300&fit=crop", date: "2024-02-20", timestamp: Date.now() - 6000000, province: "florida", status: "approved" },
-    { id: "demo_c1", name: "Comarapa - Calles Empedradas", category: "turistico", description: "Pueblo colonial con calles empedradas, trapiches de caña de azúcar y arquitectura tradicional.", lat: -17.915, lng: -64.505, image: "https://images.unsplash.com/photo-1518182170546-0766bc6f9213?w=400&h=300&fit=crop", date: "2024-01-15", timestamp: Date.now() - 7000000, province: "caballero", status: "approved" },
-    { id: "demo_c2", name: "Museo Arqueológico de Saipina", category: "cultural", description: "Museo con más de 500 piezas arqueológicas. Restos de la ciudadela de Saipina-Pukova.", lat: -18.10, lng: -64.30, image: "https://images.unsplash.com/photo-1554907984-15263bfd63bd?w=400&h=300&fit=crop", date: "2024-01-05", timestamp: Date.now() - 8000000, province: "caballero", status: "approved" },
-    { id: "demo_c3", name: "Parque Amboró - Zona Caballero", category: "natural", description: "Sector del Parque Nacional Amboró. Hogar del oso de anteojos y especies endémicas.", lat: -17.75, lng: -64.35, image: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop", date: "2023-12-20", timestamp: Date.now() - 9000000, province: "caballero", status: "approved" }
-  ];
+  return [];
 }
 
 function initMap() {
@@ -588,7 +578,7 @@ function renderPlaces() {
   const container = document.getElementById("places-list");
   container.innerHTML = "";
   if (filteredPlaces.length === 0) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><p class="empty-state-text">No hay lugares en esta categoría.<br>¡Sé el primero en documentar uno!</p></div>';
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><p class="empty-state-text">No hay lugares registrados aún.<br>¡Sé el primero en documentar uno!</p></div>';
     return;
   }
   filteredPlaces.forEach(place => {
@@ -623,14 +613,45 @@ function openForm() {
   selectedFile = null; selectedFileData = null;
 }
 function closeForm() { document.getElementById("upload-modal").classList.remove("active"); }
-function handleFileSelect(event) {
+async function compressImage(file, maxWidth = 1200, maxHeight = 1200, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = function() {
+      let w = img.width, h = img.height;
+      if (w > h) { if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; } }
+      else { if (h > maxHeight) { w = Math.round(w * maxHeight / h); h = maxHeight; } }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob((blob) => {
+        if (!blob) { reject(new Error("Compression failed")); return; }
+        const compressed = new File([blob], file.name, { type: "image/jpeg", lastModified: Date.now() });
+        resolve(compressed);
+      }, "image/jpeg", quality);
+    };
+    img.onerror = () => reject(new Error("Invalid image"));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function handleFileSelect(event) {
   const file = event.target.files[0];
   if (!file) return;
   if (file.size > 5 * 1024 * 1024) { showToast("⚠️ Máximo 5MB", "#f7b731"); return; }
-  selectedFile = file;
+  showLoading("Comprimiendo...");
+  try {
+    selectedFile = await compressImage(file, 1200, 1200, 0.75);
+    showToast("✅ Imagen comprimida: " + Math.round(selectedFile.size / 1024) + " KB", "#26de81");
+  } catch (e) {
+    selectedFile = file;
+    showToast("⚠️ Sin compresión", "#f7b731");
+  }
+  hideLoading();
   const reader = new FileReader();
-  reader.onload = function(e) { selectedFileData = e.target.result; document.getElementById("preview-img").src = e.target.result; document.getElementById("preview-img").style.display = "block"; document.getElementById("upload-preview").textContent = "✅"; document.getElementById("upload-text").textContent = file.name; };
-  reader.readAsDataURL(file);
+  reader.onload = function(e) { selectedFileData = e.target.result; document.getElementById("preview-img").src = e.target.result; document.getElementById("preview-img").style.display = "block"; document.getElementById("upload-preview").textContent = "✅"; document.getElementById("upload-text").textContent = selectedFile.name + " (" + Math.round(selectedFile.size / 1024) + " KB)"; };
+  reader.readAsDataURL(selectedFile);
 }
 function getLocation() {
   const statusEl = document.getElementById("loc-status");
@@ -652,7 +673,7 @@ async function handleSubmit(event) {
   if (!name || !category || !lat || !lng) { showToast("⚠️ Completa todos los campos", "#f7b731"); return; }
   showLoading("Subiendo...");
   document.getElementById("upload-progress").style.display = "block";
-  let imageUrl = "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop";
+  let imageUrl = "data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%22400%22%20height=%22300%22%3E%3Crect%20fill=%22%23222%22%20width=%22400%22%20height=%22300%22/%3E%3Ctext%20x=%2250%25%22%20y=%2250%25%22%20text-anchor=%22middle%22%20dy=%22.3em%22%20fill=%22%23555%22%20font-size=%2240%22%3E%F0%9F%93%B7%3C/text%3E%3C/svg%3E";
   if (selectedFile) { try { imageUrl = await uploadImage(selectedFile); } catch (e) { imageUrl = selectedFileData || imageUrl; } }
   showLoading("Guardando...");
   const newPlace = { id: "local_" + Date.now(), name: name, category: category, description: desc || "Sin descripción", lat: lat, lng: lng, image: imageUrl, date: new Date().toISOString().split("T")[0], timestamp: Date.now(), province: currentProvince, status: "pending" };
