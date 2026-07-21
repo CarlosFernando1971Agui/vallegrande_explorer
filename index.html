@@ -356,15 +356,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getFirestore, collection, addDoc, getDocs, query, orderBy, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyCXJ85MYfv-pCP7LtnN3LeXOFRlm5HCHsQ",
+  apiKey: "AIzaSyCXJ85MYfv-pCP7LtnN3LeX0FRlm5HCHsQ",
   authDomain: "vallegrande-explorer.firebaseapp.com",
   projectId: "vallegrande-explorer",
   storageBucket: "vallegrande-explorer.firebasestorage.app",
   messagingSenderId: "394322529797",
   appId: "1:394322529797:web:387d18f304cda52798d66c",
-  measurementId: "G-3MEZD115YS"
+  measurementId: "G-3MEZD115VS"
 };
 
 const ADMIN_PASSWORD = "valles2024";
@@ -601,7 +600,7 @@ function renderPlaces() {
     card.onmouseleave = () => { card.style.borderColor = "rgba(255,255,255,0.05)"; };
     card.onclick = () => { map.setView([place.lat, place.lng], 15); showDetail(place.id); if (window.innerWidth <= 768) toggleSidebar(); };
     const statusBadge = isAdmin && place.status !== "approved" ? '<span class="place-card-status status-' + place.status + '">' + (place.status === "pending" ? "⏳" : "❌") + "</span>" : "";
-    card.innerHTML = '<div class="place-card-inner"><img class="place-card-img" src="' + place.image + '" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2265%22 height=%2265%22><rect fill=%22%23333%22 width=%2265%22 height=%2265%22/><text x=%2232.5%22 y=%2232.5%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23666%22 font-size=%2220%22>📷</text></svg>'"><div class="place-card-info"><h4 class="place-card-name">' + place.name + statusBadge + '</h4><span class="place-card-category" style="background:' + color + '22;color:' + color + '">' + categoryLabels[place.category] + '</span><p class="place-card-desc">' + (place.description || "Sin descripción") + "</p></div></div>";
+    card.innerHTML = '<div class="place-card-inner"><img class="place-card-img" src="' + place.image + '" alt="" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2265%22%20height=%2265%22%3E%3Crect%20fill=%22%23333%22%20width=%2265%22%20height=%2265%22/%3E%3Ctext%20x=%2232.5%22%20y=%2232.5%22%20text-anchor=%22middle%22%20dy=%22.3em%22%20fill=%22%23666%22%20font-size=%2220%22%3E%F0%9F%93%B7%3C/text%3E%3C/svg%3E'"><div class="place-card-info"><h4 class="place-card-name">' + place.name + statusBadge + '</h4><span class="place-card-category" style="background:' + color + '22;color:' + color + '">' + categoryLabels[place.category] + '</span><p class="place-card-desc">' + (place.description || "Sin descripción") + "</p></div></div>";
     container.appendChild(card);
   });
 }
