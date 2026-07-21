@@ -56,8 +56,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(135d
 .empty-state{text-align:center;padding:40px 20px;color:var(--text-muted)}
 .empty-state-icon{font-size:48px;margin-bottom:12px}
 .empty-state-text{font-size:0.85rem;line-height:1.5}
-.map-wrapper{flex:1;position:relative;overflow:hidden}
-#map{width:100%;height:100%;background:var(--bg-dark)}
+.map-wrapper{flex:1;position:relative;overflow:hidden;min-height:300px}
+#map{position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;background:var(--bg-dark);z-index:1}
 .map-controls{position:absolute;top:14px;right:14px;display:flex;flex-direction:column;gap:6px;z-index:1000}
 .map-btn{width:38px;height:38px;background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:white;font-size:16px;cursor:pointer;backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;transition:all 0.2s;font-family:inherit}
 .map-btn:hover{background:rgba(0,0,0,0.8);border-color:var(--accent)}
@@ -377,8 +377,12 @@ try {
   storage = getStorage(app);
   firebaseReady = true;
   updateStatus("🟢 Conectado", "#26de81");
+  console.log("Firebase initialized successfully");
 } catch (e) {
-  console.warn("Firebase no configurado:", e);
+  console.warn("Firebase init failed:", e.message);
+  firebaseReady = false;
+  db = null;
+  storage = null;
   updateStatus("🟡 Modo local", "#f7b731");
 }
 
@@ -419,7 +423,10 @@ async function updatePlaceStatus(id, status) {
 }
 
 async function loadPlacesFromFirebase() {
-  if (!firebaseReady) return loadFromLocal();
+  if (!firebaseReady || !db) {
+    console.log("Firebase not ready, using localStorage");
+    return loadFromLocal();
+  }
   try {
     const q = query(collection(db, "places"), orderBy("timestamp", "desc"));
     const snapshot = await getDocs(q);
@@ -428,8 +435,12 @@ async function loadPlacesFromFirebase() {
     const localData = loadFromLocal();
     const allIds = new Set(loaded.map(p => p.id));
     localData.forEach(p => { if (!allIds.has(p.id)) loaded.push(p); });
+    console.log("Loaded " + loaded.length + " places from Firebase");
     return loaded;
-  } catch (e) { return loadFromLocal(); }
+  } catch (e) {
+    console.warn("Firebase load failed:", e.message);
+    return loadFromLocal();
+  }
 }
 
 async function uploadImage(file) {
@@ -460,17 +471,41 @@ function showToast(message, color) {
 }
 
 document.addEventListener("DOMContentLoaded", async function() {
-  // Small delay to ensure container has rendered dimensions
-  setTimeout(async function() {
-    initMap();
-    // Force Leaflet to recalculate size after container is visible
-    setTimeout(() => { if (map) map.invalidateSize(); }, 100);
-    places = await loadPlacesFromFirebase();
-    if (places.length === 0) { places = getDemoPlaces(); saveToLocal(); }
-    setProvince("vallegrande");
-    // Double-check map size after province switch
-    setTimeout(() => { if (map) map.invalidateSize(); }, 300);
-  }, 50);
+  // Init map FIRST, before anything else
+  initMap();
+
+  // Force Leaflet to recalculate size after container is visible
+  requestAnimationFrame(() => {
+    if (map) map.invalidateSize();
+  });
+
+  // Load places with a timeout to prevent Firebase from hanging forever
+  const loadPromise = loadPlacesFromFirebase();
+  const timeoutPromise = new Promise(resolve => setTimeout(() => resolve([]), 3000));
+
+  try {
+    places = await Promise.race([loadPromise, timeoutPromise]);
+  } catch (e) {
+    console.warn("Firebase load error:", e);
+    places = [];
+  }
+
+  // If still empty after Firebase + timeout, use localStorage or empty
+  if (places.length === 0) {
+    const localData = loadFromLocal();
+    if (localData.length > 0) {
+      places = localData;
+    } else {
+      places = getDemoPlaces();
+      saveToLocal();
+    }
+  }
+
+  setProvince("vallegrande");
+
+  // Double-check map size after everything loads
+  setTimeout(() => { if (map) map.invalidateSize(); }, 200);
+  setTimeout(() => { if (map) map.invalidateSize(); }, 500);
 });
 
 function getDemoPlaces() {
@@ -478,15 +513,32 @@ function getDemoPlaces() {
 }
 
 function initMap() {
-  // Force container to have dimensions before Leaflet init
   const mapContainer = document.getElementById("map");
+  if (!mapContainer) { console.error("Map container not found!"); return; }
+
+  // Ensure container has explicit dimensions
+  const wrapper = mapContainer.parentElement;
+  if (wrapper) {
+    wrapper.style.width = "100%";
+    wrapper.style.height = "100%";
+    wrapper.style.position = "relative";
+  }
   mapContainer.style.width = "100%";
   mapContainer.style.height = "100%";
   mapContainer.style.minHeight = "300px";
+  mapContainer.style.position = "absolute";
+  mapContainer.style.top = "0";
+  mapContainer.style.left = "0";
+  mapContainer.style.right = "0";
+  mapContainer.style.bottom = "0";
 
   map = L.map("map", { zoomControl: false, attributionControl: false });
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+  const tileLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, crossOrigin: true });
+tileLayer.on("tileerror", function(e) { console.warn("Tile failed to load:", e.tile.src); });
+tileLayer.addTo(map);
   drawProvinceBoundaries();
+
+  console.log("Map initialized successfully");
 }
 
 function drawProvinceBoundaries() {
@@ -500,7 +552,10 @@ function setProvince(prov) {
   const p = provinces[prov];
   document.querySelectorAll(".province-btn").forEach(btn => { btn.classList.toggle("active", btn.dataset.prov === prov); });
   document.getElementById("sidebar-title").textContent = "📸 Lugares de " + p.name;
-  map.setView(p.center, p.zoom);
+  if (map) {
+    map.setView(p.center, p.zoom);
+    setTimeout(() => { map.invalidateSize(); }, 100);
+  }
   Object.keys(provincePolygons).forEach(key => {
     const poly = provincePolygons[key];
     if (key === prov) { poly.setStyle({ fillOpacity: 0.08, weight: 3 }); }
@@ -797,6 +852,16 @@ window.closeAdminPanel = closeAdminPanel;
 window.setAdminTab = setAdminTab;
 window.approvePlace = approvePlace;
 window.rejectPlace = rejectPlace;
+
+// Force map resize on window load and after a delay
+window.addEventListener("load", function() {
+  setTimeout(function() {
+    if (map) { map.invalidateSize(); console.log("Map resized on window load"); }
+  }, 300);
+  setTimeout(function() {
+    if (map) { map.invalidateSize(); console.log("Map resized delayed"); }
+  }, 1000);
+});
 </script>
 </body>
 </html>
