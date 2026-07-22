@@ -98,6 +98,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(135d
 .detail-modal .modal-content{padding:0;overflow:hidden}
 .detail-img-wrapper{position:relative}
 .detail-img{width:100%;height:220px;object-fit:cover;cursor:zoom-in;transition:opacity 0.2s}.detail-img:hover{opacity:0.9}
+.detail-close-btn:hover + #close-tooltip,
+#close-tooltip.show{opacity:1;transform:translateY(0)}
 .detail-close-btn{position:absolute;top:10px;right:10px;width:34px;height:34px;background:rgba(0,0,0,0.6);border:none;border-radius:50%;color:white;font-size:18px;cursor:pointer;backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center}
 .detail-category-badge{position:absolute;bottom:10px;left:10px;padding:5px 12px;border-radius:18px;font-size:0.72rem;font-weight:600;color:white}
 .detail-body{padding:18px}
@@ -144,6 +146,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(135d
 .loading-text{color:#fff;font-size:0.95rem;font-weight:500}
 @keyframes spin{to{transform:rotate(360deg)}}
 .custom-marker{background:transparent!important;border:none!important}
+.custom-tooltip{background:transparent!important;border:none!important;box-shadow:none!important}
+.custom-tooltip .leaflet-tooltip-top:before{border-top-color:rgba(0,0,0,0.8)!important}
+.leaflet-tooltip.custom-tooltip{background:transparent!important;border:none!important;box-shadow:none!important}
 @keyframes markerPulse{0%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:0.7}100%{transform:scale(1);opacity:1}}
 .marker-pulse .leaflet-marker-icon>div{animation:markerPulse 1s ease-in-out 3}
 .leaflet-popup-content-wrapper{background:#1a1a2e!important;border:1px solid rgba(255,255,255,0.1)!important;border-radius:12px!important;box-shadow:0 8px 30px rgba(0,0,0,0.5)!important}
@@ -297,21 +302,22 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(135d
 <div class="modal-content">
 <div class="detail-img-wrapper">
 <img class="detail-img" id="detail-img" src="" alt="" style="cursor:zoom-in" onclick="openImageModal(this.src)">
-<button class="detail-close-btn" onclick="closeDetail()">×</button>
+<button class="detail-close-btn" onclick="closeDetail()" id="detail-close-x">×</button>
+<div id="close-tooltip" style="position:absolute;top:46px;right:10px;background:var(--yellow);color:#1a1a2e;padding:4px 10px;border-radius:8px;font-size:0.7rem;font-weight:600;opacity:0;transform:translateY(-5px);transition:all 0.3s;pointer-events:none;z-index:10;white-space:nowrap">✕ Clic aquí para cerrar</div>
 <div class="detail-category-badge" id="detail-category"></div>
 </div>
 <div class="detail-body">
 <h2 class="detail-name" id="detail-name"></h2>
 <p class="detail-date" id="detail-date"></p>
 <p class="detail-desc" id="detail-desc"></p>
-<div class="detail-coords" style="cursor:pointer;transition:all 0.2s" onmouseenter="this.style.borderColor='var(--cyan)'" onmouseleave="this.style.borderColor='transparent'" onclick="centerMapOnPlace(currentDetailId)">
+<button type="button" class="detail-coords" id="detail-coords-btn" style="width:100%;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px;display:flex;align-items:center;gap:8px;cursor:pointer;color:inherit;font-family:inherit;text-align:left;transition:all 0.2s" onmouseenter="this.style.borderColor='var(--cyan)';this.style.background='rgba(78,205,196,0.1)'" onmouseleave="this.style.borderColor='rgba(255,255,255,0.1)';this.style.background='rgba(0,0,0,0.3)'">
 <span class="detail-coords-icon">📍</span>
 <div style="flex:1">
-<p class="detail-coords-label">Coordenadas (clic para ver en mapa)</p>
-<p class="detail-coords-value" id="detail-coords"></p>
+<p class="detail-coords-label" style="margin:0">Coordenadas (clic para ver en mapa)</p>
+<p class="detail-coords-value" id="detail-coords" style="margin:0"></p>
 </div>
 <span style="font-size:20px;opacity:0.6">🗺️</span>
-</div>
+</button>
 </div>
 </div>
 </div>
@@ -416,9 +422,18 @@ function saveToLocal() { localStorage.setItem("valles_places", JSON.stringify(pl
 function loadFromLocal() { const d = localStorage.getItem("valles_places"); return d ? JSON.parse(d) : []; }
 
 async function savePlaceToFirebase(place) {
-  // Evitar duplicados: si ya existe un place con el mismo id, no hacer nada
-  const existing = places.find(p => p.id === place.id);
-  if (existing) { console.log("Place already exists, skipping:", place.id); return; }
+  // Evitar duplicados por id
+  const existingById = places.find(p => p.id === place.id);
+  if (existingById) { console.log("Place already exists by id, skipping:", place.id); return; }
+
+  // Evitar duplicados por nombre + coordenadas (misma foto subida dos veces)
+  const existingByData = places.find(p => 
+    p.name === place.name && 
+    p.province === place.province &&
+    Math.abs(p.lat - place.lat) < 0.001 && 
+    Math.abs(p.lng - place.lng) < 0.001
+  );
+  if (existingByData) { console.log("Duplicate place by data, skipping:", place.name); return; }
 
   if (!firebaseReady) { places.unshift(place); saveToLocal(); return; }
   try {
@@ -536,6 +551,18 @@ document.addEventListener("DOMContentLoaded", async function() {
     places = getDemoPlaces();
     saveToLocal();
   }
+
+  // Deduplicar places por id antes de renderizar
+  const uniquePlaces = [];
+  const seenIds = new Set();
+  places.forEach(p => {
+    if (!seenIds.has(p.id)) {
+      seenIds.add(p.id);
+      uniquePlaces.push(p);
+    }
+  });
+  places = uniquePlaces;
+  saveToLocal();
 
   setProvince("vallegrande");
   setTimeout(() => { if (map) map.invalidateSize(); }, 200);
@@ -669,6 +696,17 @@ function renderMarkers() {
     popupContent.appendChild(popupDesc);
     const marker = L.marker([place.lat, place.lng], { icon: customIcon }).addTo(map).bindPopup(popupContent);
     marker.placeId = place.id;
+
+    // Tooltip al pasar el mouse (hover) - muestra nombre y categoría
+    const tooltipContent = '<div style="font-family:system-ui;font-size:0.8rem;font-weight:600;color:#fff;background:rgba(0,0,0,0.8);padding:6px 10px;border-radius:8px;white-space:nowrap;border:1px solid ' + color + '">' + 
+      (categoryIcons[place.category] || "📍") + ' ' + place.name + '</div>';
+    marker.bindTooltip(tooltipContent, {
+      direction: 'top',
+      offset: [0, -20],
+      opacity: 1,
+      className: 'custom-tooltip'
+    });
+
     marker.on("click", () => {
       marker.closePopup();
       showDetail(place.id);
@@ -853,6 +891,8 @@ function getLocation() {
 
 async function handleSubmit(event) {
   event.preventDefault();
+  const submitBtn = event.target.querySelector('button[type="submit"]');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.style.opacity = "0.6"; submitBtn.style.cursor = "not-allowed"; }
   const name = document.getElementById("place-name").value;
   const category = document.getElementById("place-category").value;
   const desc = document.getElementById("place-desc").value;
@@ -902,6 +942,7 @@ async function handleSubmit(event) {
     showToast("✅ Guardado localmente (sin conexión)", "#f7b731");
   } finally {
     hideLoading();
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.style.opacity = ""; submitBtn.style.cursor = ""; }
   }
 }
 
@@ -912,6 +953,18 @@ function showDetail(id) {
   if (map) map.closePopup();
   const place = places.find(p => p.id === id);
   if (!place) return;
+
+  // Configurar el botón de coordenadas con event listener limpio
+  setTimeout(() => {
+    const coordsBtn = document.getElementById("detail-coords-btn");
+    if (coordsBtn) {
+      coordsBtn.onclick = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        centerMapOnPlace(id);
+      };
+    }
+  }, 50);
   document.getElementById("detail-img").src = place.image;
   document.getElementById("detail-name").textContent = place.name;
   document.getElementById("detail-date").textContent = "📅 " + place.date + " · " + provinces[place.province].name;
@@ -921,6 +974,15 @@ function showDetail(id) {
   catEl.textContent = categoryLabels[place.category];
   catEl.style.background = categoryColors[place.category];
   document.getElementById("detail-modal").classList.add("active");
+
+  // Mostrar tooltip de cierre automáticamente por 3 segundos
+  setTimeout(() => {
+    const tooltip = document.getElementById("close-tooltip");
+    if (tooltip) {
+      tooltip.classList.add("show");
+      setTimeout(() => tooltip.classList.remove("show"), 3000);
+    }
+  }, 500);
 }
 function closeDetail() { 
   const modal = document.getElementById("detail-modal");
@@ -1109,19 +1171,19 @@ function centerMapOnPlace(id) {
   const place = places.find(p => p.id === id);
   if (!place || !map) { console.warn("Place or map not found for id:", id); return; }
 
-  // Forzar cierre COMPLETO del detail-modal
+  // PASO 1: Forzar cierre COMPLETO del detail-modal
   const modal = document.getElementById("detail-modal");
   if (modal) {
     modal.classList.remove("active");
     modal.style.display = "none";
-    void modal.offsetWidth;
-    modal.style.display = "";
   }
   document.body.style.overflow = "";
   document.body.style.height = "";
-  if (map) map.closePopup();
 
-  // En móvil: cerrar sidebar si está abierto
+  // PASO 2: Cerrar cualquier popup de Leaflet
+  map.closePopup();
+
+  // PASO 3: En móvil, cerrar sidebar
   if (window.innerWidth <= 768) {
     const sidebar = document.getElementById("sidebar");
     const overlay = document.getElementById("sidebar-overlay");
@@ -1129,17 +1191,20 @@ function centerMapOnPlace(id) {
     if (overlay) overlay.classList.remove("active");
   }
 
-  // Forzar recálculo del layout del mapa
-  if (map) map.invalidateSize();
-
-  // Buscar el marcador por placeId
+  // PASO 4: Buscar el marcador
   const marker = markers.find(m => m.placeId === id);
 
-  // Usar flyTo para animación suave de zoom in
-  map.flyTo([place.lat, place.lng], 16, {
-    animate: true,
-    duration: 1.2,
-    easeLinearity: 0.25
+  // PASO 5: Forzar recálculo del mapa y flyTo
+  requestAnimationFrame(() => {
+    map.invalidateSize();
+    setTimeout(() => {
+      map.invalidateSize();
+      map.flyTo([place.lat, place.lng], 16, {
+        animate: true,
+        duration: 1.2,
+        easeLinearity: 0.25
+      });
+    }, 100);
   });
 
   // Abrir popup DESPUÉS de que termine la animación flyTo
