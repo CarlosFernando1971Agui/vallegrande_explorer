@@ -66,8 +66,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(135d
 .legend-item{display:flex;align-items:center;gap:6px;margin-bottom:4px}
 .legend-dot{width:10px;height:10px;border-radius:50%}
 .legend-label{font-size:0.7rem}
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px);z-index:2000;align-items:center;justify-content:center;padding:16px}
-.modal-overlay.active{display:flex}
+.modal-overlay{display:none !important;position:fixed;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px);z-index:2000;align-items:center;justify-content:center;padding:16px;opacity:0;transition:opacity 0.3s ease}
+.modal-overlay.active{display:flex !important;opacity:1}
 .modal-content{background:linear-gradient(135deg,var(--bg-dark),var(--bg-mid));border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:24px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 25px 50px rgba(0,0,0,0.5)}
 .modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
 .modal-title{margin:0;color:#fff;font-size:1.2rem}
@@ -669,7 +669,10 @@ function renderMarkers() {
     popupContent.appendChild(popupDesc);
     const marker = L.marker([place.lat, place.lng], { icon: customIcon }).addTo(map).bindPopup(popupContent);
     marker.placeId = place.id;
-    marker.on("click", () => showDetail(place.id));
+    marker.on("click", () => {
+      marker.closePopup();
+      showDetail(place.id);
+    });
     markers.push(marker);
   });
 }
@@ -905,6 +908,8 @@ async function handleSubmit(event) {
 let currentDetailId = null;
 function showDetail(id) {
   currentDetailId = id;
+  // Cerrar cualquier popup de Leaflet abierto
+  if (map) map.closePopup();
   const place = places.find(p => p.id === id);
   if (!place) return;
   document.getElementById("detail-img").src = place.image;
@@ -919,10 +924,18 @@ function showDetail(id) {
 }
 function closeDetail() { 
   const modal = document.getElementById("detail-modal");
-  if (modal) modal.classList.remove("active"); 
+  if (modal) {
+    modal.style.display = "none";
+    modal.classList.remove("active"); 
+    // Forzar reflow
+    void modal.offsetWidth;
+    modal.style.display = "";
+  }
   document.body.style.overflow = "";
   document.body.style.height = "";
-  // Forzar recálculo del mapa tras cerrar cualquier modal
+  // Cerrar cualquier popup de Leaflet
+  if (map) map.closePopup();
+  // Forzar recálculo del mapa
   requestAnimationFrame(() => {
     if (map) map.invalidateSize();
     setTimeout(() => { if (map) map.invalidateSize(); }, 200);
@@ -1096,19 +1109,30 @@ function centerMapOnPlace(id) {
   const place = places.find(p => p.id === id);
   if (!place || !map) { console.warn("Place or map not found for id:", id); return; }
 
-  // Cerrar modal inmediatamente
-  closeDetail();
+  // Forzar cierre COMPLETO del detail-modal
+  const modal = document.getElementById("detail-modal");
+  if (modal) {
+    modal.classList.remove("active");
+    modal.style.display = "none";
+    void modal.offsetWidth;
+    modal.style.display = "";
+  }
+  document.body.style.overflow = "";
+  document.body.style.height = "";
+  if (map) map.closePopup();
 
   // En móvil: cerrar sidebar si está abierto
   if (window.innerWidth <= 768) {
     const sidebar = document.getElementById("sidebar");
-    if (sidebar && sidebar.classList.contains("open")) toggleSidebar();
+    const overlay = document.getElementById("sidebar-overlay");
+    if (sidebar) sidebar.classList.remove("open");
+    if (overlay) overlay.classList.remove("active");
   }
 
-  // Forzar recálculo del layout del mapa (el modal podía estar tapando)
+  // Forzar recálculo del layout del mapa
   if (map) map.invalidateSize();
 
-  // Buscar el marcador por placeId (más confiable que coordenadas)
+  // Buscar el marcador por placeId
   const marker = markers.find(m => m.placeId === id);
 
   // Usar flyTo para animación suave de zoom in
@@ -1149,6 +1173,18 @@ window.onclick = function(event) {
   if (event.target.id === "detail-modal") closeDetail();
   if (event.target.id === "login-modal") closeAdminLogin();
 };
+
+// Cerrar detail-modal al hacer click en el mapa (cualquier parte del mapa que no sea marcador)
+if (map) {
+  map.on('click', function(e) {
+    // Solo cerrar si el click NO fue en un marcador o popup
+    const target = e.originalEvent.target;
+    const isMarker = target.closest('.leaflet-marker-icon') || target.closest('.leaflet-popup');
+    if (!isMarker) {
+      closeDetail();
+    }
+  });
+}
 
 window.setProvince = setProvince;
 window.setFilter = setFilter;
