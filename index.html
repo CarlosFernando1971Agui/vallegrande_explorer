@@ -411,6 +411,10 @@ function saveToLocal() { localStorage.setItem("valles_places", JSON.stringify(pl
 function loadFromLocal() { const d = localStorage.getItem("valles_places"); return d ? JSON.parse(d) : []; }
 
 async function savePlaceToFirebase(place) {
+  // Evitar duplicados: si ya existe un place con el mismo id, no hacer nada
+  const existing = places.find(p => p.id === place.id);
+  if (existing) { console.log("Place already exists, skipping:", place.id); return; }
+
   if (!firebaseReady) { places.unshift(place); saveToLocal(); return; }
   try {
     const docRef = await Promise.race([
@@ -447,9 +451,6 @@ async function loadPlacesFromFirebase() {
     const snapshot = await getDocs(q);
     const loaded = [];
     snapshot.forEach(docSnap => { const d = docSnap.data(); d.id = docSnap.id; loaded.push(d); });
-    const localData = loadFromLocal();
-    const allIds = new Set(loaded.map(p => p.id));
-    localData.forEach(p => { if (!allIds.has(p.id)) loaded.push(p); });
     console.log("Loaded " + loaded.length + " places from Firebase");
     return loaded;
   } catch (e) {
@@ -499,24 +500,36 @@ document.addEventListener("DOMContentLoaded", async function() {
   initMap();
   requestAnimationFrame(() => { if (map) map.invalidateSize(); });
 
+  // Cargar primero localStorage
+  const localData = loadFromLocal();
+  if (localData.length > 0) {
+    places = localData;
+  }
+
+  // Intentar cargar de Firebase sin duplicar lo que ya está en localStorage
   const loadPromise = loadPlacesFromFirebase();
   const timeoutPromise = new Promise(resolve => setTimeout(() => resolve([]), 3000));
 
   try {
-    places = await Promise.race([loadPromise, timeoutPromise]);
+    const firebasePlaces = await Promise.race([loadPromise, timeoutPromise]);
+    if (firebasePlaces && firebasePlaces.length > 0) {
+      // Merge: prioridad a Firebase, evitar duplicados por id
+      const existingIds = new Set(places.map(p => p.id));
+      firebasePlaces.forEach(fp => {
+        if (!existingIds.has(fp.id)) {
+          places.push(fp);
+          existingIds.add(fp.id);
+        }
+      });
+      saveToLocal();
+    }
   } catch (e) {
     console.warn("Firebase load error:", e);
-    places = [];
   }
 
   if (places.length === 0) {
-    const localData = loadFromLocal();
-    if (localData.length > 0) {
-      places = localData;
-    } else {
-      places = getDemoPlaces();
-      saveToLocal();
-    }
+    places = getDemoPlaces();
+    saveToLocal();
   }
 
   setProvince("vallegrande");
@@ -841,8 +854,9 @@ async function handleSubmit(event) {
   }
 
   showLoading("Guardando...");
+  const placeId = "local_" + Date.now();
   const newPlace = {
-    id: "local_" + Date.now(),
+    id: placeId,
     name: name,
     category: category,
     description: desc || "Sin descripción",
@@ -1042,17 +1056,23 @@ function closeImageModal() {
 }
 function centerMapOnPlace(id) {
   const place = places.find(p => p.id === id);
-  if (!place || !map) return;
-  map.setView([place.lat, place.lng], 16);
+  if (!place || !map) { console.warn("Place or map not found for id:", id); return; }
   closeDetail();
-  showToast("📍 Mostrando ubicación en el mapa", "#4ecdc4");
   setTimeout(() => {
+    map.setView([place.lat, place.lng], 16);
+    // Buscar el marcador por coordenadas exactas (con tolerancia)
     const marker = markers.find(m => {
       const ll = m.getLatLng();
       return Math.abs(ll.lat - place.lat) < 0.0001 && Math.abs(ll.lng - place.lng) < 0.0001;
     });
-    if (marker) marker.openPopup();
-  }, 400);
+    if (marker) {
+      marker.openPopup();
+      console.log("Popup opened for:", place.name);
+    } else {
+      console.warn("Marker not found for place:", place.name, place.lat, place.lng);
+    }
+  }, 300);
+  showToast("📍 Mostrando ubicación en el mapa", "#4ecdc4");
 }
 
 window.onclick = function(event) {
