@@ -68,6 +68,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(135d
 .legend-label{font-size:0.7rem}
 .modal-overlay{display:none !important;position:fixed;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px);z-index:2000;align-items:center;justify-content:center;padding:16px;opacity:0;transition:opacity 0.3s ease}
 .modal-overlay.active{display:flex !important;opacity:1}
+#image-modal.modal-overlay{background:rgba(0,0,0,0.95)!important;backdrop-filter:none!important;padding:0!important}
+#image-modal.modal-overlay.active{display:flex!important}
 .modal-content{background:linear-gradient(135deg,var(--bg-dark),var(--bg-mid));border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:24px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 25px 50px rgba(0,0,0,0.5)}
 .modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
 .modal-title{margin:0;color:#fff;font-size:1.2rem}
@@ -1154,64 +1156,53 @@ window.addEventListener("load", function() {
 });
 
 
-let isImageZoomed = false;
 let imageModalSrc = "";
 
 function openImageModal(src) {
   imageModalSrc = src;
-  isImageZoomed = false;
   const modal = document.getElementById("image-modal");
   const img = document.getElementById("image-modal-img");
   const hint = document.getElementById("zoom-hint");
+  if (!modal || !img) return;
+
   img.src = src;
-  img.style.cursor = "zoom-in";
+  img.style.cursor = "zoom-out";
   img.style.transform = "scale(1)";
-  img.style.maxWidth = "95vw";
-  img.style.maxHeight = "90vh";
-  if (hint) { hint.textContent = "🔍 Clic para ampliar"; hint.style.opacity = "1"; }
-  modal.classList.add("active");
-  document.body.style.overflow = "hidden";
-  // Ocultar hint después de 2 segundos
-  setTimeout(() => { if (hint) hint.style.opacity = "0"; }, 2000);
-}
+  img.style.opacity = "1";
+  img.style.maxWidth = "100vw";
+  img.style.maxHeight = "100vh";
+  img.style.borderRadius = "0";
 
-function toggleImageZoom() {
-  const img = document.getElementById("image-modal-img");
-  const hint = document.getElementById("zoom-hint");
-  if (!img) return;
-
-  isImageZoomed = !isImageZoomed;
-
-  if (isImageZoomed) {
-    // ZOOM IN: imagen a tamaño completo (100% de la ventana)
-    img.style.cursor = "zoom-out";
-    img.style.maxWidth = "100vw";
-    img.style.maxHeight = "100vh";
-    img.style.transform = "scale(1)";
-    img.style.borderRadius = "0";
-    if (hint) { hint.textContent = "🔍 Clic para reducir"; hint.style.opacity = "1"; }
-  } else {
-    // ZOOM OUT: volver a tamaño normal (segunda imagen / modal de detalle)
-    closeImageModal();
-    return;
+  if (hint) { 
+    hint.textContent = "🔍 Clic en la imagen para volver"; 
+    hint.style.opacity = "1"; 
   }
 
-  setTimeout(() => { if (hint) hint.style.opacity = "0"; }, 2000);
+  modal.classList.add("active");
+  document.body.style.overflow = "hidden";
+
+  // Ocultar hint después de 2 segundos
+  setTimeout(() => { if (hint) hint.style.opacity = "0"; }, 2500);
 }
 
 function closeImageModal() {
   const modal = document.getElementById("image-modal");
-  const img = document.getElementById("image-modal-img");
-  if (modal) modal.classList.remove("active");
-  document.body.style.overflow = "";
-  isImageZoomed = false;
-  if (img) {
-    img.style.transform = "scale(0.95)";
-    img.style.opacity = "0";
+  if (modal) {
+    modal.classList.remove("active");
+    modal.style.display = "none";
+    void modal.offsetWidth;
+    modal.style.display = "";
   }
+  document.body.style.overflow = "";
   requestAnimationFrame(() => {
     if (map) map.invalidateSize();
   });
+}
+
+// Clic en la imagen ampliada → cierra y vuelve al detail
+function onImageModalClick(e) {
+  e.stopPropagation();
+  closeImageModal();
 }
 function centerMapOnPlace(id) {
   const place = places.find(p => p.id === id);
@@ -1320,14 +1311,14 @@ window.approvePlace = approvePlace;
 window.rejectPlace = rejectPlace;
 window.openImageModal = openImageModal;
 window.closeImageModal = closeImageModal;
-window.toggleImageZoom = toggleImageZoom;
+window.onImageModalClick = onImageModalClick;
 window.centerMapOnPlace = centerMapOnPlace;
 </script>
 
-<div class="modal-overlay" id="image-modal" onclick="toggleImageZoom()">
-<div style="display:flex;align-items:center;justify-content:center;height:100%;padding:20px;position:relative">
-<img id="image-modal-img" src="" alt="" style="max-width:95vw;max-height:90vh;border-radius:12px;box-shadow:0 25px 60px rgba(0,0,0,0.8);object-fit:contain;cursor:zoom-in;transition:all 0.4s cubic-bezier(0.175,0.885,0.32,1.275)" onclick="event.stopPropagation()">
-<div id="zoom-hint" style="position:absolute;bottom:30px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:20px;font-size:0.8rem;font-weight:500;backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.1);pointer-events:none;opacity:0;transition:opacity 0.3s;white-space:nowrap">🔍 Clic para ampliar</div>
+<div class="modal-overlay" id="image-modal" onclick="closeImageModal()">
+<div style="display:flex;align-items:center;justify-content:center;height:100%;width:100%;padding:0;position:relative;background:#000">
+<img id="image-modal-img" src="" alt="" style="width:100%;height:100%;object-fit:contain;cursor:zoom-out" onclick="onImageModalClick(event)">
+<div id="zoom-hint" style="position:absolute;bottom:30px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#fff;padding:8px 16px;border-radius:20px;font-size:0.8rem;font-weight:500;backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.1);pointer-events:none;opacity:0;transition:opacity 0.3s;white-space:nowrap;z-index:10">🔍 Clic en la imagen para volver</div>
 </div>
 </div>
 
