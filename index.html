@@ -97,7 +97,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(135d
 .gps-status{margin:5px 0 0 0;font-size:0.72rem;color:var(--cyan);min-height:16px}
 .detail-modal .modal-content{padding:0;overflow:hidden}
 .detail-img-wrapper{position:relative}
-.detail-img{width:100%;height:220px;object-fit:cover}
+.detail-img{width:100%;height:220px;object-fit:cover;cursor:zoom-in;transition:opacity 0.2s}.detail-img:hover{opacity:0.9}
 .detail-close-btn{position:absolute;top:10px;right:10px;width:34px;height:34px;background:rgba(0,0,0,0.6);border:none;border-radius:50%;color:white;font-size:18px;cursor:pointer;backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center}
 .detail-category-badge{position:absolute;bottom:10px;left:10px;padding:5px 12px;border-radius:18px;font-size:0.72rem;font-weight:600;color:white}
 .detail-body{padding:18px}
@@ -291,7 +291,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(135d
 <div class="modal-overlay detail-modal" id="detail-modal">
 <div class="modal-content">
 <div class="detail-img-wrapper">
-<img class="detail-img" id="detail-img" src="" alt="">
+<img class="detail-img" id="detail-img" src="" alt="" style="cursor:zoom-in" onclick="openImageModal(this.src)">
 <button class="detail-close-btn" onclick="closeDetail()">×</button>
 <div class="detail-category-badge" id="detail-category"></div>
 </div>
@@ -299,12 +299,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(135d
 <h2 class="detail-name" id="detail-name"></h2>
 <p class="detail-date" id="detail-date"></p>
 <p class="detail-desc" id="detail-desc"></p>
-<div class="detail-coords">
+<div class="detail-coords" style="cursor:pointer;transition:all 0.2s" onmouseenter="this.style.borderColor='var(--cyan)'" onmouseleave="this.style.borderColor='transparent'" onclick="centerMapOnPlace(currentDetailId)">
 <span class="detail-coords-icon">📍</span>
-<div>
-<p class="detail-coords-label">Coordenadas</p>
+<div style="flex:1">
+<p class="detail-coords-label">Coordenadas (clic para ver en mapa)</p>
 <p class="detail-coords-value" id="detail-coords"></p>
 </div>
+<span style="font-size:20px;opacity:0.6">🗺️</span>
 </div>
 </div>
 </div>
@@ -874,7 +875,9 @@ async function handleSubmit(event) {
   }
 }
 
+let currentDetailId = null;
 function showDetail(id) {
+  currentDetailId = id;
   const place = places.find(p => p.id === id);
   if (!place) return;
   document.getElementById("detail-img").src = place.image;
@@ -1025,6 +1028,33 @@ window.addEventListener("load", function() {
   }, 1000);
 });
 
+
+function openImageModal(src) {
+  const modal = document.getElementById("image-modal");
+  const img = document.getElementById("image-modal-img");
+  img.src = src;
+  modal.classList.add("active");
+  document.body.style.overflow = "hidden";
+}
+function closeImageModal() {
+  document.getElementById("image-modal").classList.remove("active");
+  document.body.style.overflow = "";
+}
+function centerMapOnPlace(id) {
+  const place = places.find(p => p.id === id);
+  if (!place || !map) return;
+  map.setView([place.lat, place.lng], 16);
+  closeDetail();
+  showToast("📍 Mostrando ubicación en el mapa", "#4ecdc4");
+  setTimeout(() => {
+    const marker = markers.find(m => {
+      const ll = m.getLatLng();
+      return Math.abs(ll.lat - place.lat) < 0.0001 && Math.abs(ll.lng - place.lng) < 0.0001;
+    });
+    if (marker) marker.openPopup();
+  }, 400);
+}
+
 window.onclick = function(event) {
   if (event.target.id === "upload-modal") closeForm();
   if (event.target.id === "detail-modal") closeDetail();
@@ -1052,6 +1082,16 @@ window.closeAdminPanel = closeAdminPanel;
 window.setAdminTab = setAdminTab;
 window.approvePlace = approvePlace;
 window.rejectPlace = rejectPlace;
+window.openImageModal = openImageModal;
+window.closeImageModal = closeImageModal;
+window.centerMapOnPlace = centerMapOnPlace;
 </script>
+
+<div class="modal-overlay" id="image-modal" onclick="closeImageModal()">
+<div style="display:flex;align-items:center;justify-content:center;height:100%;padding:20px;cursor:zoom-out">
+<img id="image-modal-img" src="" alt="" style="max-width:95vw;max-height:90vh;border-radius:12px;box-shadow:0 25px 60px rgba(0,0,0,0.8);object-fit:contain;cursor:zoom-out;transition:transform 0.3s" onclick="event.stopPropagation()">
+</div>
+</div>
+
 </body>
 </html>
