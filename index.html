@@ -446,18 +446,60 @@ async function loadPlacesFromFirebase() {
   }
 }
 
+// ===== FUNCIÓN CORREGIDA: uploadImage con timeout y mejor manejo de errores =====
 async function uploadImage(file) {
+  // Siempre devolvemos base64 como fallback si Firebase falla
+  const getBase64 = () => new Promise((resolve) => {
+    const r = new FileReader();
+    r.onload = (e) => resolve(e.target.result);
+    r.readAsDataURL(file);
+  });
+
+  // Si Firebase no está disponible, usar base64 directamente
   if (!firebaseReady || !storage) {
-    return new Promise((resolve) => { const r = new FileReader(); r.onload = (e) => resolve(e.target.result); r.readAsDataURL(file); });
+    console.log("Firebase Storage no disponible, usando base64");
+    return await getBase64();
   }
+
   const fileName = "places/" + Date.now() + "_" + file.name.replace(/[^a-zA-Z0-9.]/g, "_");
   const storageRef = ref(storage, fileName);
   const uploadTask = uploadBytesResumable(storageRef, file);
-  return new Promise((resolve, reject) => {
+
+  return new Promise(async (resolve, reject) => {
+    // Timeout de seguridad: si en 30 segundos no termina, cancelamos y usamos base64
+    const timeoutId = setTimeout(async () => {
+      console.warn("Timeout de subida a Firebase (30s), usando base64");
+      try { uploadTask.cancel(); } catch (e) {}
+      const base64 = await getBase64();
+      resolve(base64);
+    }, 30000);
+
     uploadTask.on("state_changed",
-      (snapshot) => { updateProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100); },
-      (error) => reject(error),
-      async () => { const url = await getDownloadURL(uploadTask.snapshot.ref); resolve(url); }
+      (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        updateProgress(progress);
+        console.log("Progreso de subida:", Math.round(progress) + "%");
+      },
+      async (error) => {
+        clearTimeout(timeoutId);
+        console.error("Error de subida a Firebase Storage:", error.code, error.message);
+        // Si hay error de CORS o permisos, usar base64 como fallback
+        const base64 = await getBase64();
+        showToast("⚠️ Subida a nube falló, guardando localmente", "#f7b731");
+        resolve(base64);
+      },
+      async () => {
+        clearTimeout(timeoutId);
+        try {
+          const url = await getDownloadURL(uploadTask.snapshot.ref);
+          console.log("Subida exitosa, URL:", url);
+          resolve(url);
+        } catch (e) {
+          console.error("Error obteniendo URL de descarga:", e);
+          const base64 = await getBase64();
+          resolve(base64);
+        }
+      }
     );
   });
 }
@@ -800,22 +842,41 @@ function getLocation() {
   );
 }
 
+// ===== FUNCIÓN CORREGIDA: handleSubmit con try/catch completo =====
 async function handleSubmit(event) {
   event.preventDefault();
-  const name = document.getElementById("place-name").value;
+  const name = document.getElementById("place-name").value.trim();
   const category = document.getElementById("place-category").value;
-  const desc = document.getElementById("place-desc").value;
+  const desc = document.getElementById("place-desc").value.trim();
   const lat = parseFloat(document.getElementById("lat-input").value);
   const lng = parseFloat(document.getElementById("lng-input").value);
-  if (!name || !category || !lat || !lng) { showToast("⚠️ Completa todos los campos", "#f7b731"); return; }
-  showLoading("Subiendo...");
-  document.getElementById("upload-progress").style.display = "block";
-  let imageUrl = fallbackImg400;
-  if (selectedFile) {
-    try { imageUrl = await uploadImage(selectedFile); }
-    catch (e) { imageUrl = selectedFileData || imageUrl; }
+
+  if (!name || !category || isNaN(lat) || isNaN(lng)) {
+    showToast("⚠️ Completa todos los campos obligatorios", "#f7b731");
+    return;
   }
-  showLoading("Guardando...");
+
+  showLoading("Subiendo imagen...");
+  document.getElementById("upload-progress").style.display = "block";
+  updateProgress(0);
+
+  let imageUrl = fallbackImg400;
+
+  try {
+    if (selectedFile) {
+      imageUrl = await uploadImage(selectedFile);
+    } else if (selectedFileData) {
+      imageUrl = selectedFileData;
+    }
+  } catch (e) {
+    console.error("Error en subida de imagen:", e);
+    imageUrl = selectedFileData || fallbackImg400;
+    showToast("⚠️ Usando imagen local", "#f7b731");
+  }
+
+  showLoading("Guardando lugar...");
+  updateProgress(100);
+
   const newPlace = {
     id: "local_" + Date.now(),
     name: name,
@@ -829,11 +890,18 @@ async function handleSubmit(event) {
     province: currentProvince,
     status: "pending"
   };
-  await savePlaceToFirebase(newPlace);
-  hideLoading();
-  applyFilter(); renderPlaces(); renderMarkers(); updateCount(); closeForm();
-  map.setView([lat, lng], 15);
-  showToast("✅ Enviado para revisión", "#26de81");
+
+  try {
+    await savePlaceToFirebase(newPlace);
+    hideLoading();
+    applyFilter(); renderPlaces(); renderMarkers(); updateCount(); closeForm();
+    map.setView([lat, lng], 15);
+    showToast("✅ Enviado para revisión", "#26de81");
+  } catch (e) {
+    hideLoading();
+    console.error("Error guardando lugar:", e);
+    showToast("❌ Error al guardar, intenta de nuevo", "#e94560");
+  }
 }
 
 function showDetail(id) {
