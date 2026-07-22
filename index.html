@@ -904,7 +904,12 @@ function showDetail(id) {
   catEl.style.background = categoryColors[place.category];
   document.getElementById("detail-modal").classList.add("active");
 }
-function closeDetail() { document.getElementById("detail-modal").classList.remove("active"); }
+function closeDetail() { 
+  document.getElementById("detail-modal").classList.remove("active"); 
+  document.body.style.overflow = "";
+  // Forzar recálculo del mapa tras cerrar cualquier modal
+  setTimeout(() => { if (map) map.invalidateSize(); }, 100);
+}
 
 function openAdminLogin() {
   document.getElementById("login-modal").classList.add("active");
@@ -1057,9 +1062,19 @@ function closeImageModal() {
 function centerMapOnPlace(id) {
   const place = places.find(p => p.id === id);
   if (!place || !map) { console.warn("Place or map not found for id:", id); return; }
+
+  // Cerrar modal inmediatamente
   closeDetail();
+
+  // Forzar recálculo del layout del mapa (el modal podía estar tapando)
+  if (map) map.invalidateSize();
+
+  // Pequeño delay para que el DOM se estabilice tras cerrar el modal
   setTimeout(() => {
-    map.setView([place.lat, place.lng], 16);
+    if (!map) return;
+    map.invalidateSize();
+    map.setView([place.lat, place.lng], 16, { animate: true, duration: 0.5 });
+
     // Buscar el marcador por coordenadas exactas (con tolerancia)
     const marker = markers.find(m => {
       const ll = m.getLatLng();
@@ -1070,8 +1085,14 @@ function centerMapOnPlace(id) {
       console.log("Popup opened for:", place.name);
     } else {
       console.warn("Marker not found for place:", place.name, place.lat, place.lng);
+      // Fallback: crear popup temporal en las coordenadas
+      const popup = L.popup({ offset: [0, -20] })
+        .setLatLng([place.lat, place.lng])
+        .setContent('<div style="font-family:system-ui;min-width:180px"><h3 style="margin:0 0 4px 0;font-size:1rem;color:#1a1a2e">' + place.name + '</h3><span style="display:inline-block;padding:2px 10px;background:' + (categoryColors[place.category] || "#e94560") + ';color:white;border-radius:12px;font-size:0.7rem">' + (categoryLabels[place.category] || place.category) + '</span></div>')
+        .openOn(map);
     }
-  }, 300);
+  }, 150);
+
   showToast("📍 Mostrando ubicación en el mapa", "#4ecdc4");
 }
 
