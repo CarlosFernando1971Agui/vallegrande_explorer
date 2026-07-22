@@ -144,6 +144,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(135d
 .loading-text{color:#fff;font-size:0.95rem;font-weight:500}
 @keyframes spin{to{transform:rotate(360deg)}}
 .custom-marker{background:transparent!important;border:none!important}
+@keyframes markerPulse{0%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:0.7}100%{transform:scale(1);opacity:1}}
+.marker-pulse .leaflet-marker-icon>div{animation:markerPulse 1s ease-in-out 3}
+.leaflet-popup-content-wrapper{background:#1a1a2e!important;border:1px solid rgba(255,255,255,0.1)!important;border-radius:12px!important;box-shadow:0 8px 30px rgba(0,0,0,0.5)!important}
+.leaflet-popup-content{color:#e8e8e8!important;font-family:'Segoe UI',system-ui,sans-serif!important;margin:0!important;padding:0!important}
+.leaflet-popup-tip{background:#1a1a2e!important;border:1px solid rgba(255,255,255,0.1)!important}
 .leaflet-popup-content-wrapper{border-radius:12px!important;padding:0!important;overflow:hidden}
 .leaflet-popup-content{margin:0!important}
 ::-webkit-scrollbar{width:5px}
@@ -663,6 +668,7 @@ function renderMarkers() {
     popupContent.appendChild(popupCat);
     popupContent.appendChild(popupDesc);
     const marker = L.marker([place.lat, place.lng], { icon: customIcon }).addTo(map).bindPopup(popupContent);
+    marker.placeId = place.id;
     marker.on("click", () => showDetail(place.id));
     markers.push(marker);
   });
@@ -758,7 +764,14 @@ function openForm() {
   document.getElementById("progress-bar").style.width = "0%";
   selectedFile = null; selectedFileData = null;
 }
-function closeForm() { document.getElementById("upload-modal").classList.remove("active"); }
+function closeForm() { 
+  document.getElementById("upload-modal").classList.remove("active"); 
+  document.body.style.overflow = "";
+  requestAnimationFrame(() => {
+    if (map) map.invalidateSize();
+    setTimeout(() => { if (map) map.invalidateSize(); }, 200);
+  });
+}
 
 async function compressImage(file, maxWidth, maxHeight, quality) {
   maxWidth = maxWidth || 1200;
@@ -905,10 +918,15 @@ function showDetail(id) {
   document.getElementById("detail-modal").classList.add("active");
 }
 function closeDetail() { 
-  document.getElementById("detail-modal").classList.remove("active"); 
+  const modal = document.getElementById("detail-modal");
+  if (modal) modal.classList.remove("active"); 
   document.body.style.overflow = "";
+  document.body.style.height = "";
   // Forzar recálculo del mapa tras cerrar cualquier modal
-  setTimeout(() => { if (map) map.invalidateSize(); }, 100);
+  requestAnimationFrame(() => {
+    if (map) map.invalidateSize();
+    setTimeout(() => { if (map) map.invalidateSize(); }, 200);
+  });
 }
 
 function openAdminLogin() {
@@ -916,7 +934,13 @@ function openAdminLogin() {
   document.getElementById("admin-password").value = "";
   document.getElementById("login-error").textContent = "";
 }
-function closeAdminLogin() { document.getElementById("login-modal").classList.remove("active"); }
+function closeAdminLogin() { 
+  document.getElementById("login-modal").classList.remove("active"); 
+  document.body.style.overflow = "";
+  requestAnimationFrame(() => {
+    if (map) map.invalidateSize();
+  });
+}
 function checkAdminPassword() {
   const input = document.getElementById("admin-password").value;
   if (input === ADMIN_PASSWORD) {
@@ -935,7 +959,13 @@ function openAdminPanel() {
   updateAdminCounts();
   renderAdminGrid();
 }
-function closeAdminPanel() { document.getElementById("admin-panel").classList.remove("active"); }
+function closeAdminPanel() { 
+  document.getElementById("admin-panel").classList.remove("active"); 
+  document.body.style.overflow = "";
+  requestAnimationFrame(() => {
+    if (map) map.invalidateSize();
+  });
+}
 function setAdminTab(tab) {
   currentAdminTab = tab;
   document.querySelectorAll(".admin-tab").forEach(t => { t.classList.toggle("active", t.dataset.tab === tab); });
@@ -1058,6 +1088,9 @@ function openImageModal(src) {
 function closeImageModal() {
   document.getElementById("image-modal").classList.remove("active");
   document.body.style.overflow = "";
+  requestAnimationFrame(() => {
+    if (map) map.invalidateSize();
+  });
 }
 function centerMapOnPlace(id) {
   const place = places.find(p => p.id === id);
@@ -1066,32 +1099,47 @@ function centerMapOnPlace(id) {
   // Cerrar modal inmediatamente
   closeDetail();
 
+  // En móvil: cerrar sidebar si está abierto
+  if (window.innerWidth <= 768) {
+    const sidebar = document.getElementById("sidebar");
+    if (sidebar && sidebar.classList.contains("open")) toggleSidebar();
+  }
+
   // Forzar recálculo del layout del mapa (el modal podía estar tapando)
   if (map) map.invalidateSize();
 
-  // Pequeño delay para que el DOM se estabilice tras cerrar el modal
-  setTimeout(() => {
-    if (!map) return;
-    map.invalidateSize();
-    map.setView([place.lat, place.lng], 16, { animate: true, duration: 0.5 });
+  // Buscar el marcador por placeId (más confiable que coordenadas)
+  const marker = markers.find(m => m.placeId === id);
 
-    // Buscar el marcador por coordenadas exactas (con tolerancia)
-    const marker = markers.find(m => {
-      const ll = m.getLatLng();
-      return Math.abs(ll.lat - place.lat) < 0.0001 && Math.abs(ll.lng - place.lng) < 0.0001;
-    });
+  // Usar flyTo para animación suave de zoom in
+  map.flyTo([place.lat, place.lng], 16, {
+    animate: true,
+    duration: 1.2,
+    easeLinearity: 0.25
+  });
+
+  // Abrir popup DESPUÉS de que termine la animación flyTo
+  const onMoveEnd = function() {
+    map.off('moveend', onMoveEnd);
     if (marker) {
+      // Agregar clase de pulso al marcador para que resalte
+      const iconEl = marker.getElement();
+      if (iconEl) {
+        iconEl.classList.add('marker-pulse');
+        setTimeout(() => iconEl.classList.remove('marker-pulse'), 3000);
+      }
       marker.openPopup();
       console.log("Popup opened for:", place.name);
     } else {
       console.warn("Marker not found for place:", place.name, place.lat, place.lng);
       // Fallback: crear popup temporal en las coordenadas
-      const popup = L.popup({ offset: [0, -20] })
+      const popup = L.popup({ offset: [0, -20], autoPan: true })
         .setLatLng([place.lat, place.lng])
         .setContent('<div style="font-family:system-ui;min-width:180px"><h3 style="margin:0 0 4px 0;font-size:1rem;color:#1a1a2e">' + place.name + '</h3><span style="display:inline-block;padding:2px 10px;background:' + (categoryColors[place.category] || "#e94560") + ';color:white;border-radius:12px;font-size:0.7rem">' + (categoryLabels[place.category] || place.category) + '</span></div>')
         .openOn(map);
     }
-  }, 150);
+  };
+  map.on('moveend', onMoveEnd);
 
   showToast("📍 Mostrando ubicación en el mapa", "#4ecdc4");
 }
